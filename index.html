@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đếm thuốc lá</title>
+<style>
+:root{--bg:#e9eeec;--card:#f8faf9;--ink:#16302a;--mute:#5f736d;--acc:#1f7a6b;--acc2:#165a4f;--bar:#b9cdc7;--line:#d3dedb}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;display:flex;justify-content:center;padding:24px}
+main{width:100%;max-width:440px;background:var(--card);border-radius:20px;padding:28px 26px;box-shadow:0 1px 0 var(--line);align-self:flex-start}
+h1{font-size:15px;font-weight:600;margin:0;color:var(--mute)}
+.date{font-size:18px;font-weight:600;margin:4px 0 0}
+.count{font-size:128px;line-height:1;font-weight:800;text-align:center;margin:26px 0 4px;letter-spacing:-4px;font-variant-numeric:tabular-nums}
+.unit{text-align:center;color:var(--mute);margin:0 0 4px}
+.last{text-align:center;color:var(--mute);font-size:14px;min-height:20px;margin:0 0 22px}
+.row{display:flex;gap:10px}
+button{font:inherit;cursor:pointer;border:0;border-radius:14px}
+button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+#add{flex:1;background:var(--acc);color:#fff;font-size:20px;font-weight:700;padding:18px}
+#add:hover{background:var(--acc2)}
+#add:active{transform:scale(.98)}
+#undo{background:var(--bg);color:var(--ink);font-size:15px;padding:0 18px}
+#undo:hover{background:var(--line)}
+.entry{display:flex;gap:10px;align-items:flex-end;margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}
+.entry label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute);flex:1}
+.entry input{font:inherit;font-size:16px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 10px;width:100%}
+.entry input:focus-visible{outline:3px solid var(--acc);outline-offset:1px}
+#save{background:var(--ink);color:#fff;font-weight:600;padding:11px 20px}
+#save:hover{background:#0c1d19}
+h2{font-size:15px;margin:30px 0 12px}
+.stats{display:flex;gap:24px;color:var(--mute);font-size:14px;margin-bottom:14px}
+.stats b{color:var(--ink);font-size:18px;display:block}
+.chart{display:flex;align-items:flex-end;gap:8px;height:120px}
+.col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:12px;color:var(--mute)}
+.col i{display:block;width:100%;background:var(--bar);border-radius:6px 6px 2px 2px;min-height:3px;margin:4px 0}
+.col.today i{background:var(--acc)}
+.col span{color:var(--ink);font-weight:600}
+ul{list-style:none;margin:0;padding:0;font-size:14px}
+li{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line)}
+li span:last-child{font-weight:600}
+.foot{margin-top:22px;font-size:12px;color:var(--mute);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.foot button{background:none;color:var(--mute);text-decoration:underline;padding:0;font-size:12px}
+@media (prefers-reduced-motion:reduce){#add:active{transform:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Hôm nay</h1>
+  <p class="date" id="date"></p>
+  <div class="count" id="count" aria-live="polite">0</div>
+  <p class="unit">điếu thuốc</p>
+  <p class="last" id="last"></p>
+  <div class="row">
+    <button id="add">+ Vừa hút 1 điếu</button>
+    <button id="undo" title="Bớt 1 điếu vừa bấm nhầm">Hoàn tác</button>
+  </div>
+
+  <div class="entry">
+    <label>Nhập số điếu<input type="number" id="num" min="0" max="999" step="1" inputmode="numeric" placeholder="0"></label>
+    <label>Ngày<input type="date" id="day"></label>
+    <button id="save">Lưu</button>
+  </div>
+
+  <h2>7 ngày gần nhất</h2>
+  <div class="stats">
+    <div><b id="sum">0</b>tổng 7 ngày</div>
+    <div><b id="avg">0</b>trung bình/ngày</div>
+  </div>
+  <div class="chart" id="chart"></div>
+
+  <h2>Lịch sử</h2>
+  <ul id="hist"></ul>
+
+  <div class="foot">
+    <span>Dữ liệu lưu ngay trên máy này.</span>
+    <span><button id="exp">Sao lưu</button> · <button id="clr">Xóa hết</button></span>
+  </div>
+</main>
+
+<script>
+var KEY = "dem-thuoc-la-v1";
+var data = {};
+try { data = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { data = {}; }
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {} }
+function pad(n) { return String(n).padStart(2, "0"); }
+function keyOf(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function fmt(d) { return pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear(); }
+var DAYS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
+function n(k) { return (data[k] || []).length; }
+
+function render() {
+  var now = new Date(), today = keyOf(now);
+  document.getElementById("date").textContent = DAYS[now.getDay()] + ", " + fmt(now);
+  var c = n(today);
+  document.getElementById("count").textContent = c;
+  var arr = data[today] || [];
+  document.getElementById("last").textContent = arr.length
+    ? "Điếu gần nhất lúc " + new Date(arr[arr.length - 1]).toLocaleTimeString("vi-VN", {hour: "2-digit", minute: "2-digit"})
+    : "Chưa hút điếu nào hôm nay.";
+
+  var days = [], max = 1, sum = 0;
+  for (var i = 6; i >= 0; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    var k = keyOf(d), v = n(k);
+    days.push({d: d, k: k, v: v});
+    sum += v; if (v > max) max = v;
+  }
+  document.getElementById("sum").textContent = sum;
+  document.getElementById("avg").textContent = (sum / 7).toFixed(1).replace(".", ",");
+  document.getElementById("chart").innerHTML = days.map(function (x) {
+    return '<div class="col' + (x.k === today ? " today" : "") + '"><span>' + x.v +
+      '</span><i style="height:' + Math.round(x.v / max * 80) + 'px"></i>' +
+      pad(x.d.getDate()) + "/" + pad(x.d.getMonth() + 1) + "</div>";
+  }).join("");
+
+  var keys = Object.keys(data).filter(function (k) { return n(k) > 0; }).sort().reverse();
+  document.getElementById("hist").innerHTML = keys.length ? keys.map(function (k) {
+    var p = k.split("-"), d = new Date(+p[0], +p[1] - 1, +p[2]);
+    return "<li><span>" + DAYS[d.getDay()] + ", " + fmt(d) + "</span><span>" + n(k) + " điếu</span></li>";
+  }).join("") : "<li><span>Chưa có dữ liệu. Bấm nút xanh mỗi khi hút một điếu.</span></li>";
+}
+
+document.getElementById("add").onclick = function () {
+  var k = keyOf(new Date());
+  (data[k] = data[k] || []).push(Date.now());
+  save(); render();
+};
+document.getElementById("undo").onclick = function () {
+  var k = keyOf(new Date());
+  if (data[k] && data[k].length) { data[k].pop(); save(); render(); }
+};
+document.getElementById("exp").onclick = function () {
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: "application/json"}));
+  a.download = "dem-thuoc-la-" + keyOf(new Date()) + ".json";
+  a.click();
+};
+document.getElementById("clr").onclick = function () {
+  if (confirm("Xóa toàn bộ lịch sử? Không thể khôi phục.")) { data = {}; save(); render(); }
+};
+
+var numEl = document.getElementById("num"), dayEl = document.getElementById("day");
+
+function loadEntry() {
+  var today = keyOf(new Date());
+  dayEl.max = today;
+  if (!dayEl.value) dayEl.value = today;
+  if (document.activeElement !== numEl) numEl.value = n(dayEl.value);
+}
+function saveEntry() {
+  var k = dayEl.value, v = parseInt(numEl.value, 10);
+  if (!k || isNaN(v) || v < 0 || v > 999) { numEl.focus(); return; }
+  var cur = data[k] || [], isToday = k === keyOf(new Date());
+  if (v > cur.length) {
+    var p = k.split("-"), base = isToday ? Date.now() : new Date(+p[0], +p[1] - 1, +p[2], 12).getTime();
+    while (cur.length < v) cur.push(base);
+  } else {
+    cur = cur.slice(0, v);
+  }
+  if (cur.length) data[k] = cur; else delete data[k];
+  save(); render(); numEl.value = v; numEl.blur();
+}
+document.getElementById("save").onclick = saveEntry;
+numEl.addEventListener("keydown", function (e) { if (e.key === "Enter") saveEntry(); });
+dayEl.addEventListener("change", function () { numEl.value = n(dayEl.value); numEl.focus(); numEl.select(); });
+
+var _render = render;
+render = function () { _render(); loadEntry(); };
+
+render();
+setInterval(render, 60000); // tự sang ngày mới lúc nửa đêm
+</script>
+</body>
+</html>
